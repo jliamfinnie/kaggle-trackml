@@ -1,11 +1,9 @@
 # kaggle-trackml
-Kaggle TrackML challenge 2018
+[Kaggle TrackML challenge 2018](https://www.kaggle.com/c/trackml-particle-identification)
 
 **Ensembling Helix 42 - #12 Solution**
 
 Why 42? That's the largest internal DBScan helix cluster ID we merged. If you include each z-shift as a separate model, we actually merge a total of 45 models. That's a lot of merging!
-
-[You can find all our code in this github repository](https://github.com/jliamfinnie/kaggle-trackml.git)
 
 **Non-mathematicians solution from second-time Kagglers**
 
@@ -46,9 +44,9 @@ This type of track extension typically gave us a boost of between 0.01 and 0.02 
 
 **Merging**
 
-When merging clusters with different z-shifts, we found the order mattered a lot - for example, we could merge better with z-shifts in the order (-6, 3, -3, 6), than in the order (-6, -3, 3, 6).
+When merging clusters with different z-shifts, we found the order mattered a lot - for example, we could merge better with bigger jumps between successive z-shifts, i.e.the order (-6, 3, -3, 6) works better than (-6, -3, 3, 6).
 
-For our final merge at the end, we split each DBScan cluster into 'strong', 'medium' and 'weak' components based on the consistency of the helix curvature. Strong tracks are merged first, then medium, and finally weak ones at the end, getting more conservative at each step.
+For our final merge at the end, we split each DBScan cluster into **strong**, **medium** and **weak** components based on the consistency of the helix curvature. Strong tracks are merged first, then medium, and finally weak ones at the end, getting more conservative at each step.
 
 The main problem with merging is how to tell whether two tracks are really the same, or should be separate? We tend to favour extending existing tracks when possible, but will create a new track if there is too little overlap with any existing track. Some rough pseudo-code for our merging heuristics:
 ```foreach new_track in new_tracks:
