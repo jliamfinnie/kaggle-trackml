@@ -803,28 +803,6 @@ def predict_event(event_id, hits, cells, train_or_test, truth):
     print_info(42, model_parameters)
     labels_helix42 = run_helix_unrolling_predictions(event_id, hits, cells, truth, train_or_test + '_helix42', model_parameters, one_phase_only=False)
 
-
-    labels_helix1 = merge.remove_outliers(labels_helix1, hits, cells, aggressive=True, print_counts=False)
-    display_score(event_id, hits, labels_helix1, truth, 'After outlier removal helix1 ')
-    labels_helix2 = merge.remove_outliers(labels_helix2, hits, cells, aggressive=True, print_counts=False)
-    display_score(event_id, hits, labels_helix2, truth, 'After outlier removal helix2 ')
-    labels_helix3 = merge.remove_outliers(labels_helix3, hits, cells, aggressive=False, print_counts=False)
-    display_score(event_id, hits, labels_helix3, truth, 'After outlier removal helix3 ')
-    labels_helix4 = merge.remove_outliers(labels_helix4, hits, cells, aggressive=False, print_counts=False)
-    display_score(event_id, hits, labels_helix4, truth, 'After outlier removal helix4 ')
-    labels_helix5 = merge.remove_outliers(labels_helix5, hits, cells, aggressive=False, print_counts=False)
-    display_score(event_id, hits, labels_helix5, truth, 'After outlier removal helix5 ')
-    labels_helix1 = r0o.remove_badr0_tracks(labels_helix1, hits)
-    display_score(event_id, hits, labels_helix1, truth, 'After r0 outlier removal helix1 ')
-    labels_helix2 = r0o.remove_badr0_tracks(labels_helix2, hits)
-    display_score(event_id, hits, labels_helix2, truth, 'After r0 outlier removal helix2 ')
-    #labels_helix3 = r0o.remove_badr0_tracks(labels_helix3, hits)
-    #display_score(event_id, hits, labels_helix3, truth, 'After r0 outlier removal helix3 ')
-    #labels_helix4 = r0o.remove_badr0_tracks(labels_helix4, hits)
-    #display_score(event_id, hits, labels_helix4, truth, 'After r0 outlier removal helix4 ')
-    #labels_helix5 = r0o.remove_badr0_tracks(labels_helix5, hits)
-    #display_score(event_id, hits, labels_helix5, truth, 'After r0 outlier removal helix5 ')
-
     all_labels = []
     all_labels.append(labels_helix1)
     all_labels.append(labels_helix2)
@@ -876,7 +854,11 @@ def predict_event(event_id, hits, cells, train_or_test, truth):
     all_labels2.append(labels_helix19)
     all_labels2.append(labels_helix3)
     all_labels2.append(labels_helix4)
+
     for i in range(len(all_labels2)):
+        all_labels2[i] = merge.remove_outliers(all_labels2[i], hits, cells, aggressive=False, print_counts=False)
+        msg = 'After outlier removal for helix second loop ' + str(i+1) + ' for event '
+        display_score(event_id, hits, all_labels2[i], truth, msg)
         (strong, medium, weak) = r0o.split_tracks_based_on_quality(all_labels2[i], hits)
         strong_merged = merge.heuristic_merge_tracks(strong_merged, strong, hits, weak_tracks=True, overwrite_limit=4, print_summary=False)
         message = 'Merged strong tracks for event '
