@@ -42,11 +42,15 @@ Some tracks are more 'straight' than 'helix-like' - we do straight-track extensi
     
 This type of track extension typically gave us a boost of between 0.01 and 0.02 for a single DBScan model. Code is in `straight_tracks.py`, function `extend_straight_tracks()`.
 
+**Track Quality Classification**
+
+For our final merge at the end, we split each DBScan cluster into **strong**, **medium** and **weak** components based on the consistency of the helix curvature. Strong tracks are merged first, then medium, and finally weak ones at the end, getting more conservative at each step.
+
+This classification and merging approach gave us a boost of between 0.03 and 0.04, compared to merging all tracks at once. Code is in `r0outlier.py`, function `split_tracks_based_on_quality()`.
+
 **Merging**
 
 When merging clusters with different z-shifts, we found the order mattered a lot - for example, we could merge better with bigger jumps between successive z-shifts, i.e.the order (-6, 3, -3, 6) works better than (-6, -3, 3, 6).
-
-For our final merge at the end, we split each DBScan cluster into **strong**, **medium** and **weak** components based on the consistency of the helix curvature. Strong tracks are merged first, then medium, and finally weak ones at the end, getting more conservative at each step.
 
 The main problem with merging is how to tell whether two tracks are really the same, or should be separate? We tend to favour extending existing tracks when possible, but will create a new track if there is too little overlap with any existing track. Some rough pseudo-code for our merging heuristics:
 ```foreach new_track in new_tracks:

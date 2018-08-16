@@ -9,7 +9,6 @@ import multiprocessing as mp
 import threading as thr
 
 from sklearn.preprocessing import StandardScaler
-#import hdbscan
 from scipy import stats
 from tqdm import tqdm
 from sklearn.cluster import DBSCAN
@@ -262,12 +261,15 @@ def display_score(event_id, hits, labels, truth, message):
 def run_predictions(event_id, all_labels, all_hits, cells, truth, model, label_file_root, unmatched_only=True, filter_hits=True, track_extension_limits=None, merge_overwrite_limit=4, one_phase_only=False):
     """ Run a round of predictions on all or a subset of remaining hits.
     Parameters:
+      event_id: The event_id we are predicting tracks for, used for diagnostic purposes only.
       all_labels: Input np array of labeled tracks, where the index in all_labels matches
         the index of the corresponding hit in the all_hits dataframe. Each value contains
         either 0 (if the corresponding hit is not associated with any track), or a unique
         track ID (all hits that form the same track will have the same track ID).
       all_hits: Dataframe containing all the hits to be predicted for an event.
       cells: Dataframe containing all the cell information for the hits for an event.
+      truth: The ground truth containing track information for the current event. Can be
+        Used to display scores after each operation. Set to 'None' when predicting test events.
       model: The model that predictions will be run on. This model must expose a
         'predict()' method that accepts the input hits to predict as the first parameter,
         and the input 'model_parameters' as the second input parameter.
@@ -275,14 +277,15 @@ def run_predictions(event_id, all_labels, all_hits, cells, truth, model, label_f
         determined from the all_labels input array, where an unmatched hit contains a
         track ID of 0. False for this parameter means that all hits in the all_hits
         dataframe will be used to make predictions.
-      filter_hits: True iff the predicted hits should be filter to those known to be
-        high quality, i.e. that have a specific minimum track length, and that
-        contain hits in volumes 7, 8, or 9. False for this parameter means that no
-        filtering will be performed.
-      track_extension_limits: The angular limits to use when applying track extensions.
-        Track extension is performed from the full list of tracks.
+      filter_hits: True iff the predicted hits should be filtered to only include those
+        estimated to be high quality.
+      track_extension_limits: The proximity limits to use when applying track extensions.
+        Track extension is performed on the full list of tracks.
+      merge_overwrite_limit: During merging, tracks below this length are more likely to be
+        re-assigned to a new track, and tracks above this limit are more likely to remain
+        assigned to the existing track.
 
-    Returns: The new np array of predicted labels/tracks, as well as the unfiltered version.
+    Returns: The new np array of predicted labels/tracks.
     """
     hits_to_predict = all_hits
 
@@ -342,7 +345,10 @@ def run_predictions(event_id, all_labels, all_hits, cells, truth, model, label_f
                     # not find quite as much.
                     labels_full[i] = strt.extend_straight_tracks(labels_full[i], all_hits)
                     message = 'After r0 outlier removal + STRT ext. for dbscan loop ' + str(i+1) + ' score for event '
+                    display_score(event_id, all_hits, labels_full[i], truth, message)
 
+                    # If there is only one DBScan phase for the current helix, allow a larger number of neighbour
+                    # hits to be re-assigned, since we only get one chance.
                     num_neighbours = 18
                     if one_phase_only:
                         num_neighbours = 25
@@ -397,6 +403,7 @@ def run_predictions(event_id, all_labels, all_hits, cells, truth, model, label_f
     return (labels_merged)
 
 def run_helix_unrolling_predictions(event_id, hits, cells, truth, label_identifier, model_parameters, one_phase_only=False):
+    """Perform one or two DBScan phases using a model with the specified model_parameters."""
     # Shortcut - if we've previously generated and saved labels, just use them
     # rather than re-generating.
     label_file_root = 'event_' + str(event_id)+'_labels_' + label_identifier
@@ -413,14 +420,12 @@ def run_helix_unrolling_predictions(event_id, hits, cells, truth, label_identifi
     
     # For the first run, we do not have an input array of labels/tracks.
     label_file_root1 = label_file_root + '_phase1'
-    #(labels) = run_predictions(event_id, None, hits, cells, truth, model, label_file_root1, unmatched_only=False, filter_hits=True, track_extension_limits=EXTENSION_STANDARD_LIMITS, one_phase_only=one_phase_only)
     (labels) = run_predictions(event_id, None, hits, cells, truth, model, label_file_root1, unmatched_only=False, filter_hits=True, track_extension_limits=None, one_phase_only=one_phase_only)
     display_score(event_id, hits, labels, truth, 'Filtered 1st pass score for event ')
 
     if not one_phase_only:
         label_file_root2 = label_file_root + '_phase2'
         model = Clusterer(model_parameters)
-        #(labels) = run_predictions(event_id, labels, hits, cells, truth, model, label_file_root2, unmatched_only=True, filter_hits=False, track_extension_limits=EXTENSION_STANDARD_LIMITS)
         (labels) = run_predictions(event_id, labels, hits, cells, truth, model, label_file_root2, unmatched_only=True, filter_hits=False, track_extension_limits=None)
         display_score(event_id, hits, labels, truth, '2nd pass score for event ')
 
@@ -460,18 +465,9 @@ def print_info(helix_id, model_parameters):
     print('z shift matrix: ' + str(z_shift_matrix))
     print('==========================================================================')
    
-def merge_all_labels(event_id, all_labels, hits, truth):
-    merge_count = 0
-    labels_merged = np.copy(all_labels[0])
-    for i in range(len(all_labels)):
-        if i == 0: continue
-        labels_merged = merge.heuristic_merge_tracks(labels_merged, all_labels[i], hits, overwrite_limit=6, print_summary=False)
-        merge_count = merge_count + 1
-        message = 'Merged loop 1-' + str(i+1) + ' score for event '
-        display_score(event_id, hits, labels_merged, truth, message)
-    return labels_merged
-
 def merge_all_strong_labels(event_id, all_labels, hits, truth):
+    """Merge all tracks from all labels in the input all_labels list. Tracks will be merged
+    using parameters suitable for high-quality tracks."""
     merge_count = 0
     labels_merged = np.copy(all_labels[0])
     for i in range(len(all_labels)):
@@ -488,6 +484,8 @@ def merge_all_strong_labels(event_id, all_labels, hits, truth):
     return labels_merged
 
 def merge_all_medium_labels(event_id, all_labels, hits, truth):
+    """Merge all tracks from all labels in the input all_labels list. Tracks will be merged
+    using parameters suitable for medium-quality tracks."""
     merge_count = 0
     labels_merged = np.copy(all_labels[0])
     for i in range(len(all_labels)):
@@ -504,6 +502,8 @@ def merge_all_medium_labels(event_id, all_labels, hits, truth):
     return labels_merged
 
 def merge_all_weak_labels(event_id, all_labels, hits, truth):
+    """Merge all tracks from all labels in the input all_labels list. Tracks will be merged
+    using parameters suitable for low-quality tracks."""
     merge_count = 0
     labels_merged = np.copy(all_labels[0])
     for i in range(len(all_labels)):
@@ -521,6 +521,7 @@ def merge_all_weak_labels(event_id, all_labels, hits, truth):
 
 
 def predict_event(event_id, hits, cells, train_or_test, truth):
+    """Predict tracks for all specified hits."""
     
     #DBSCAN_EPS_MATRIX = [0.0033, 0.0041, 0.0037, 0.0045]
 
@@ -528,7 +529,6 @@ def predict_event(event_id, hits, cells, train_or_test, truth):
     hits['r'] = np.sqrt(hits.x**2+hits.y**2)
     hits['zr'] = hits['z'] / hits['r']
 
-    #The strongest model is  [3, 4, 10, -3]
     model_parameters = []
     model_parameters.append(HELIX_UNROLL_R_MODE)
     model_parameters.append(FEATURE_MATRIX)
@@ -836,24 +836,30 @@ def predict_event(event_id, hits, cells, train_or_test, truth):
     all_labels.append(labels_helix11)
     all_labels.append(labels_helix12)
     all_labels.append(labels_helix13)
-    #all_labels.append(labels_helix14)
-    #all_labels.append(labels_helix15)
     all_labels.append(labels_helix16)
-    #all_labels.append(labels_helix17)
-    #all_labels.append(labels_helix18)
-    #all_labels.append(labels_helix19)
     all_labels.append(labels_helix20)
     all_labels.append(labels_helix23)
     all_labels.append(labels_helix26)
     all_labels.append(labels_helix42)
     all_labels.append(labels_helix5)
-    #all_labels.append(labels_helix3)
-    #all_labels.append(labels_helix4)
     strong_labels = []
     medium_labels = []
     weak_labels = []
-    for label in all_labels:
-        (strong, medium, weak) = r0o.split_tracks_based_on_quality(label, hits)
+    for i in range(len(all_labels)):
+        if i == 0 or i == 1:
+            # Helix1 and Helix2 have a high score, but more outliers as well. More aggressive outlier
+            # detection for these helixes results in a higher overall merged score.
+            all_labels[i] = merge.remove_outliers(all_labels[i], hits, cells, aggressive=True, print_counts=False)
+            msg = 'After outlier removal for helix loop ' + str(i+1) + ' for event '
+            display_score(event_id, hits, all_labels[i], truth, msg)
+            all_labels[i] = r0o.remove_badr0_tracks(all_labels[i], hits)
+            msg = 'After r0 outlier removal for helix loop ' + str(i+1) + ' for event '
+            display_score(event_id, hits, all_labels[i], truth, msg)
+        else:
+            all_labels[i] = merge.remove_outliers(all_labels[i], hits, cells, aggressive=False, print_counts=False)
+            msg = 'After outlier removal for helix loop ' + str(i+1) + ' for event '
+            display_score(event_id, hits, all_labels[i], truth, msg)
+        (strong, medium, weak) = r0o.split_tracks_based_on_quality(all_labels[i], hits)
         strong_labels.append(strong)
         medium_labels.append(medium)
         weak_labels.append(weak)
@@ -894,36 +900,16 @@ def predict_event(event_id, hits, cells, train_or_test, truth):
     labels = merge.heuristic_merge_tracks(labels, weak_merged, hits, weak_tracks=True, overwrite_limit=1)
     display_score(event_id, hits, labels, truth, 'Merged strong, medium, and weak tracks for event ')
 
-    # Straight track extension
     labels = strt.extend_straight_tracks(labels, hits)
     display_score(event_id, hits, labels, truth, 'Merged straight-extended for event ')
 
-    # And assign any remaining free hits to odd-length tracks
+    # Assign any remaining free hits to odd-length tracks
     labels = free.assign_free_hits(labels, hits)
     display_score(event_id, hits, labels, truth, 'Merged free-hit-reassigned score for event ')
 
 
     return labels
 
-
-def run_single_threaded_training(skip, nevents):
-    path_to_train = os.path.join(INPUT_PATH, 'train_1')
-    dataset_submissions = []
-    dataset_scores = []
-
-    for event_id, hits, cells, particles, truth in load_dataset(path_to_train, skip=skip, nevents=nevents):
-
-        labels = predict_event(event_id, hits, cells, 'train', truth)
-
-        one_submission = create_one_event_submission(event_id, hits, labels)
-        score = score_event(truth, one_submission)
-
-        # Append the final submission for this event, as well as the score.
-        dataset_submissions.append(one_submission)
-        dataset_scores.append(score)
-
-
-    print('Mean score: %.8f' % (np.mean(dataset_scores)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -943,8 +929,20 @@ if __name__ == '__main__':
         training_skip = args.training[0]
         training_events = args.training[1]
 
-    if not training_events == 0:
-        run_single_threaded_training(training_skip, training_events)
+    if training_events > 0:
+        path_to_train = os.path.join(INPUT_PATH, 'train_1')
+        dataset_scores = []
+
+        for event_id, hits, cells, particles, truth in load_dataset(path_to_train, skip=training_skip, nevents=training_events):
+
+            labels = predict_event(event_id, hits, cells, 'train', truth)
+
+            one_submission = create_one_event_submission(event_id, hits, labels)
+            score = score_event(truth, one_submission)
+
+            dataset_scores.append(score)
+
+        print('Mean score: %.8f' % (np.mean(dataset_scores)))
 
     path_to_test = os.path.join(INPUT_PATH, 'test')
     test_dataset_submissions = []

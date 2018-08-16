@@ -4,6 +4,8 @@ import math
 import collections as coll
 
 def extend_straight_tracks(labels, hits):
+    """Perform track extension for tracks that appear relatively straight.
+    This improved the LB by about 0.01 to 0.02 for most helixes."""
     labels = np.copy(labels)
     hits['r'] = np.sqrt(hits.x**2+hits.y**2)
     hits['zr'] = hits['z'] / hits['r']
@@ -30,6 +32,7 @@ def extend_straight_tracks(labels, hits):
     return labels
 
 def get_expected_range(ix, xs, ys, zrs, use_largest_zrdiff=False):
+    """Return the expected range of values for x, y, z, and zr."""
     def get_min_max(old_val, diff):
         new_val = old_val - diff
         if new_val > old_val:
@@ -89,6 +92,7 @@ def get_expected_range(ix, xs, ys, zrs, use_largest_zrdiff=False):
 
 
 def get_volume_switch_expected_zr_range(zr, factor=0.01):
+    """Return the expected range of zr values when the track progresses to the next volume."""
     new_val_1 = zr * (1.00-factor)
     new_val_2 = zr * (1.00+factor)
     if new_val_1 > zr:
@@ -121,6 +125,7 @@ def is_weak_track(track, labels, volume, hits):
     return is_weak
 
 def can_merge_tracks(track1, track2, labels, hits):
+    """Evaluate if two track fragments are likely part of the same larger track."""
     # FIXME: Can be much smarter, for now, only consider merging both
     # tracks if they are both in the same volume, and do not have
     # any overlapping layers. Caller should verify that the tracks
@@ -153,6 +158,7 @@ def can_merge_tracks(track1, track2, labels, hits):
     return (merge_valid, t1_ix, t2_ix)
 
 def find_nearest_zrs(dup_ixes, ixes, zs, zrs, ideal_zr, max_zrs=3):
+    """From the list of zrs, identify the values that are closest to the input ideal_zr value."""
     test_zrs = []
     test_zs = []
     test_ixes = []
@@ -186,6 +192,8 @@ def find_nearest_zrs(dup_ixes, ixes, zs, zrs, ideal_zr, max_zrs=3):
     return nearest_zrs_ix[0:max_zrs]
 
 def select_best_zr_matches(track, labels, ix, xs, ys, zrs, px1, hits, aggressive_zr_estimation):
+    """From the input dataframe px1 of candidate hits to lengthen the input track, select
+    the most likely ones."""
     # FIXME: Can be much smarter...
     print_debug = False
     px1_ixes = px1.index.values
@@ -278,6 +286,7 @@ def select_best_zr_matches(track, labels, ix, xs, ys, zrs, px1, hits, aggressive
     return steal_ixes
 
 def generate_zr_layer_data(x, y, zr, layer, lmap):
+    """Determine the mean x, z, and zr values for each unique layer."""
     xs = [0,0,0,0,0,0,0]
     ys = [0,0,0,0,0,0,0]
     zrs = [0,0,0,0,0,0,0]
@@ -296,6 +305,7 @@ def generate_zr_layer_data(x, y, zr, layer, lmap):
     return (xs, ys, zrs, counts)
 
 def one_round_straight_track_extension(track, labels, hits, aggressive_zr_estimation):
+    """Perform one round of straight track extensions for the given track."""
     print_debug = False
     more_rounds_possible = False
     hit_ix = np.where(labels == track)[0]
@@ -400,55 +410,9 @@ def one_round_straight_track_extension(track, labels, hits, aggressive_zr_estima
 
     return (more_rounds_possible, labels)
 
-def cleanse_straight_track(track, labels, hits):
-    hit_ix = np.where(labels == track)[0]
-    if len(hit_ix) == 0:
-        return labels
-    df = hits.loc[hit_ix]
-    msg = 'Track: ' + str(track) + ', '
-    if not np.all(df.volume_id.values == 12) and not np.all(df.volume_id.values == 8):
-        # FIXME: Future improvement, handle other volumes, and handle
-        # tracks that span volumes.
-        #print(msg + 'Can only lengthen straight tracks in volume 9, found: ' + str(df.volume_id.values))
-        return (labels)
-    df = df.sort_values('z')
-    hit_ix2 = df.index.values
-    x,y,zr = df[['x', 'y', 'zr']].values.astype(np.float32).T
-    volume,layer = df[['volume_id', 'layer_id' ]].values.T
-    #  indexes:  [2->0,4->1,6->2,8->3,10->4,12->5,14->6]
-    lmap = [0,0,0,0,1,0,2,0,3,0,4,0,5,0,6]
-    all_layers = [2,4,6,8,10,12,14]
-    uniq_layers = np.unique(layer)
-    uniq_volumes = np.unique(volume)
-    xs = [0,0,0,0,0,0,0]
-    ys = [0,0,0,0,0,0,0]
-    zrs = [0,0,0,0,0,0,0]
-    counts = [0,0,0,0,0,0,0]
-    # FIXME: LIAM: Within a single layer, only allow 0.5% variation?
-    for ix, l in enumerate(layer):
-        aix = lmap[l]
-        counts[aix] = counts[aix] + 1
-        xs[aix] = xs[aix] + x[ix]
-        ys[aix] = ys[aix] + y[ix]
-        zrs[aix] = zrs[aix] + zr[ix]
-    for ix, count in enumerate(counts):
-        if count != 0:
-            xs[ix] = xs[ix] / count
-            ys[ix] = ys[ix] / count
-            zrs[ix] = zrs[ix] / count
-
-    # DOES NOT WORK! 
-    #if len(uniq_layers) == 3:
-    #    # Favour keeping beginning of track, cut out high end if it looks wrong
-    #    # sample zrs: 6.16, 6.22, 6.05
-    #    if zrs[1] > zrs[0] and zrs[2] < (0.995*zrs[1]):
-    #        print(msg + ' is a positive possible cleansing target')
-    #    elif zrs[1] < zrs[0] and zrs[2] > (0.995*zrs[1]):
-    #        print(msg + ' is a negative possible cleansing target')
-
-    return labels
 
 def merge_with_other_volumes(track, labels, hits):
+    """Attempt to merge our track with hits from the next volume."""
     hit_ix = np.where(labels == track)[0]
     if len(hit_ix) == 0:
         return labels
@@ -679,50 +643,16 @@ def merge_with_other_volumes(track, labels, hits):
     return labels
 
 def straight_track_extension(track, labels, hits, aggressive_zr_estimation):
-    #labels = np.copy(labels)
-    # No good cleanse operation yet....
-    # Would be good to find cases where two hits in the same layer are
-    # far apart, tell which one is likely outlier, and remove it.
-    #labels = cleanse_straight_track(track, labels, hits)
+    """Extend the given track, assuming it is relatively straight. Only really works
+    for tracks in volumes 7 and 9."""
     more_rounds = True
     while more_rounds:
         (more_rounds, labels) = one_round_straight_track_extension(track, labels, hits, aggressive_zr_estimation)
     labels = merge_with_other_volumes(track, labels, hits)
     return labels
 
-def compare_track_to_truth(track, labels, hits, truth):
-    hit_ix = np.where(labels == track)[0]
-    df = hits.loc[hit_ix]
-    df = df.sort_values('z')
-    dfx1 = df[['x','y', 'z', 'zr', 'volume_id', 'layer_id']]
-
-    tdf = truth.loc[hit_ix]
-    truth_count = coll.Counter(tdf.particle_id.values).most_common(2)
-    truth_particle_id = truth_count[0][0]
-    if truth_particle_id == 0 and len(truth_count) > 1:
-        truth_particle_id = truth_count[1][0]
-    tdf2 = truth.loc[(truth.particle_id == truth_particle_id)]
-    tdf2 = tdf2.sort_values('tz')
-
-    arr_s1 = np.copy(hit_ix)
-    arr_s1.sort()
-    arr_s2 = np.copy(tdf2.index.values)
-    arr_s2.sort()
-    if np.array_equal(arr_s1, arr_s2):
-        print('Equal!')
-        print(arr_s1)
-        print(arr_s2)
-        print(dfx1)
-    else:
-        print('Detected track: ' + str(arr_s1))
-        print('Truth track:    ' + str(arr_s2))
-        print(dfx1)
-
-        df3 = hits.loc[tdf2.index.values]
-        dfx3 = df3[['x','y', 'z', 'zr', 'volume_id', 'layer_id']]
-        print(dfx3)
-
 def check_if_zr_straight(zr_values):
+    """Check if the input zr values indicate the associated track is relatively straight."""
     if len(zr_values) < 3:
         is_straight = 0
     else:
@@ -744,6 +674,7 @@ def check_if_zr_straight(zr_values):
     return (is_straight, num_outliers)
 
 def is_straight_track(track, labels, hits):
+    """Return true iff the input track is relatively straight."""
     is_straight = 0
     hit_ix = np.where(labels == track)[0]
 

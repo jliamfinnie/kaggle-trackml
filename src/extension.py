@@ -5,21 +5,15 @@ import collections as coll
 import track_score as score
 import straight_tracks as strt
 
-def extend_submission(iter, submissions, hits, do_swap=False, limit=0.04):
-    df = submissions.merge(hits,  on=['hit_id'], how='left')
-    df = extend(iter, df, do_swap, limit)
-    return df[['event_id', 'hit_id', 'track_id']]       
-
 def try_extend_single_hit_avoid_outliers(track, track_len, hit_ix, labels, hits):
     """
-    This is a variant that tries to avoid extending our track when the target hit looks
+    This function tries to avoid extending our track when the target hit looks
     like it would likely be an outlier, for example if it contains the exact same z-value
     as the previous hit in the track, or if the new hit's zr value is significantly
-    different than hits from the previous layer.
-    At the moment, this does not improve the score - it reduces the number of outliers
-    that need to later be removed, however the end score is very slightly lower.
-    As such, it is not called for now, until such time it can be improved such
-    that it increases our score.
+    different than hits from the previous layer. If it looks like it could be a
+    valid part of the given track, we compute scores (based on track length and number
+    of estimated outliers) for the two tracks, and only assign the new hit to the
+    track if it has a higher score than the track that the hit was previousls assigned to.
     """
     trk_ix = np.where(labels == track)[0]
     df = hits.loc[trk_ix]
@@ -73,38 +67,25 @@ def try_extend_single_hit_avoid_outliers(track, track_len, hit_ix, labels, hits)
                 
     return (labels, track_len)
 
-def try_extend_single_hit(track, track_len, hit_ix, labels, hits, use_scoring):
-    if use_scoring:
-        outlier_modifier = 0.75
-        orig_track = labels[hit_ix]
+def try_extend_single_hit(track, track_len, hit_ix, labels, hits):
+    """Assign the input hit to the input track if the input track is longer than the track
+    that the hit was previously assigned to."""
+    orig_track = labels[hit_ix]
+    if orig_track == 0:
         labels[hit_ix] = track
-        new_score = score.calculate_track_score(track, labels, hits, outlier_modifier=outlier_modifier, outlier_ix=hit_ix)
-        labels[hit_ix] = orig_track
-        if orig_track != 0:
-            orig_score = score.calculate_track_score(orig_track, labels, hits, outlier_modifier=outlier_modifier, outlier_ix=hit_ix)
-        else:
-            orig_score = 0
-
-        if new_score >= orig_score:
+    else:
+        # If the hit is already occupied by another track, only take ownership
+        # of the hit if our track is longer than the current-occupying track.
+        orig_track_len = len(np.where(labels==orig_track)[0])
+        if track_len > orig_track_len:
             labels[hit_ix] = track
             track_len = track_len + 1
-    else:
-        orig_track = labels[hit_ix]
-        if orig_track == 0:
-            labels[hit_ix] = track
-        else:
-            # If the hit is already occupied by another track, only take ownership
-            # of the hit if our track is longer than the current-occupying track.
-            orig_track_len = len(np.where(labels==orig_track)[0])
-            if track_len > orig_track_len:
-                labels[hit_ix] = track
-                track_len = track_len + 1
                 
     return (labels, track_len)
 
 
 def _one_cone_slice(df, df1, angle, delta_angle, limit=0.04, num_neighbours=18, use_scoring=False):
-
+    """Perform track extensions for a single cone slice."""
     min_num_neighbours = len(df1)
     if min_num_neighbours < 3: 
         return df
@@ -182,7 +163,7 @@ def _one_cone_slice(df, df1, angle, delta_angle, limit=0.04, num_neighbours=18, 
             if use_scoring:
                 (labels, cur_track_len) = try_extend_single_hit_avoid_outliers(p, cur_track_len, df_ix, labels, df)
             else:
-                (labels, cur_track_len) = try_extend_single_hit(p, cur_track_len, df_ix, labels, df, use_scoring)
+                (labels, cur_track_len) = try_extend_single_hit(p, cur_track_len, df_ix, labels, df)
 
         ## extend end point
         ns = tree.query([[c1, s1, r1, zr1]], k=min(num_neighbours, min_num_neighbours), return_distance=False)
@@ -204,13 +185,16 @@ def _one_cone_slice(df, df1, angle, delta_angle, limit=0.04, num_neighbours=18, 
             if use_scoring:
                 (labels, cur_track_len) = try_extend_single_hit_avoid_outliers(p, cur_track_len, df_ix, labels, df)
             else:
-                (labels, cur_track_len) = try_extend_single_hit(p, cur_track_len, df_ix, labels, df, use_scoring)
+                (labels, cur_track_len) = try_extend_single_hit(p, cur_track_len, df_ix, labels, df)
 
     df['track_id'] = labels
 
     return df
 
 def do_all_track_extensions(labels, hits, track_extension_limits, num_neighbours=18, use_scoring=False):
+    """Perform track extensions using each of the specified proximity limits.
+    When used with track_extension_limits=[0.02, 0.04, 0.06, 0.08, 0.10], this typcially
+    provides a 0.05 to 0.15 improvement to the LB score."""
     time1 = time.time()
     df = hits.copy(deep=True)
     df['track_id'] = labels.tolist()
@@ -225,6 +209,7 @@ def do_all_track_extensions(labels, hits, track_extension_limits, num_neighbours
     return df.track_id.values
 
 def extend(iter, df, do_swap=False, limit=0.04, num_neighbours=18, use_scoring=False):
+    """Perform track extensions for the given proximity limit."""
     if do_swap:
         df = df.assign(x = -df.x)
         df = df.assign(y = -df.y)

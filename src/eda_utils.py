@@ -4,7 +4,6 @@ import sys
 import numpy as np
 import pandas as pd
 import math
-from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -12,6 +11,7 @@ import seaborn as sns
 import collections as coll
 
 def get_truth_for_track(track, labels, truth):
+    """Return the label indexes for the truth version of the given track."""
     hit_ix = np.where(labels == track)[0]
     tdf = truth.loc[hit_ix]
     truth_count = coll.Counter(tdf.particle_id.values).most_common(2)
@@ -27,6 +27,7 @@ def get_truth_for_track(track, labels, truth):
     return truth_ix
 
 def compare_track_to_truth(track, labels, hits, truth):
+    """Display comparison results between a track and the ground truth track."""
     hit_ix = np.where(labels == track)[0]
     df = hits.loc[hit_ix]
     df = df.sort_values('z')
@@ -50,6 +51,9 @@ def compare_track_to_truth(track, labels, hits, truth):
         print(tdf)
 
 def track_distance_from_truth(track, labels, hits, truth):
+    """Return whether a track matches the ground truth exactly, or if not, the
+    number of track hits that are correct truth track hits, vs incorrect (refer
+    to another track)."""
     hit_ix = np.where(labels == track)[0]
     truth_ix = get_truth_for_track(track, labels, truth)
 
@@ -71,6 +75,7 @@ def track_distance_from_truth(track, labels, hits, truth):
     return (is_match, correct, incorrect)
 
 def graph_my_track(track, labels, hits, truth=None):
+    """Display xyz representation of given track in a graph."""
     hit_ix = np.where(labels == track)[0]
     df = hits.loc[hit_ix]
     df = df.sort_values('z')
@@ -88,6 +93,8 @@ def graph_my_track(track, labels, hits, truth=None):
     draw_prediction_xyz([truth_dims], [track_dims])
 
 def draw_prediction_xyz(truth, predict):
+    """Graph the given xyz values of a truth track and predicted track.
+    The predicted track is in colour, the truth track is grey."""
     fig1 = plt.figure(figsize=(12,12))
     ax1  = fig1.add_subplot(111, projection='3d')
     fig1.patch.set_facecolor('white')

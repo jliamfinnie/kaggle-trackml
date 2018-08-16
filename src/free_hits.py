@@ -14,6 +14,7 @@ def assign_free_hits(labels, hits):
     """
     Assign singleton hits to small tracks and tracks with an even length.
     This does not lose majority count, while adding a small potential benefit.
+    This gives about a 0.003 benefit to the LB score.
     """
     def do_one_assignment_round(labels, hits, lengthen_short=False):
         labels = np.copy(labels)

@@ -323,14 +323,8 @@ def find_track_outliers_zr(track, labels, hits, find_all=False, truth=None, debu
     abs_zrs = np.absolute(zr_values)
     diff_zrs = np.diff(zr_values)
     abs_diff_zrs = np.absolute(diff_zrs)
-    #min_zr = zr_values.min()
-    #max_zr = zr_values.max()
     mean_diff_zr = diff_zrs.mean()
     median_zr = abs(np.median(zr_values))
-    #allowed_min = median_zr * 0.95
-    #allowed_max = median_zr * 1.05
-    #outlier_min = median_zr * 0.1
-    #outlier_max = median_zr * 3.0
     #count_outliers = 0
 
     # If all diffs < 5% of the median value, track seems good
@@ -338,9 +332,6 @@ def find_track_outliers_zr(track, labels, hits, find_all=False, truth=None, debu
         return outlier_ix
 
     shape = classify_zr_shape(abs_zrs, diff_zrs)
-
-    #if shape == 0 or shape == 1 or shape == 2 or shape == 3 or shape == 3:
-    #    return outlier_ix
 
     rem_stage = 0
     rem_ix = -1
@@ -430,8 +421,8 @@ def find_track_outliers_zr(track, labels, hits, find_all=False, truth=None, debu
             else:
                 count_false = count_false + 1
         tt_ix = np.where(truth.particle_id.values == truth_particle_id)[0]
-        majority1 = (count_true >= count_false)
-        majority2 = (count_true >= int(len(tt_ix)/2))
+        #majority1 = (count_true >= count_false)
+        #majority2 = (count_true >= int(len(tt_ix)/2))
         #print(str(len(hit_ix2)) + ' ' + str(majority1) + ' ' + str(majority2) + ', Truth length: ' + str(len(tt_ix)) + ', True: ' + str(count_true) + ', False: ' + str(count_false))
         #print(truth_ix)
         #if truth_ix[rem_ix] == False:
@@ -445,6 +436,8 @@ def find_track_outliers_zr(track, labels, hits, find_all=False, truth=None, debu
 
 
 def remove_outliers_zr(labels, hits):
+    """Remove hits from tracks where those hits appear to be outliers, based on evaluation
+    of the hit z/r values."""
     labels = np.copy(labels)
     tracks = np.unique(labels)
     hits['z_abs'] = hits.z.abs()
@@ -467,6 +460,9 @@ def remove_outliers_zr(labels, hits):
     return labels
 
 def safe_outlier_removal(labels, hits, truth, debug=False):
+    """For training events, only remove hits identified as outliers if they do not really
+    belong to the track, based on ground truth data. This allows for evaluation of the
+    z/r outlier detection algorithm - i.e. determine false positive rate."""
     labels = np.copy(labels)
     tracks = np.unique(labels)
     hits['z_abs'] = hits.z.abs()
